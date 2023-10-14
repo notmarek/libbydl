@@ -3,3 +3,6 @@ lxml
 pycryptodome
 oscrypto
 click
+loguru
+tabulate
+colorama

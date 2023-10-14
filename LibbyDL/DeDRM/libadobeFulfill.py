@@ -108,13 +108,14 @@ def buildInitLicenseServiceRequest(authURL):
     activationxml = etree.parse(get_activation_xml_path())
     user_uuid = activationxml.find("./%s/%s" % (adNS("credentials"), adNS("user"))).text
 
-    ret = ""
-    ret += "<?xml version=\"1.0\"?>"
-    ret += "<adept:licenseServiceRequest xmlns:adept=\"http://ns.adobe.com/adept\" identity=\"user\">"
-    ret += "<adept:operatorURL>%s</adept:operatorURL>" % (authURL)
-    ret += addNonce()
-    ret += "<adept:user>%s</adept:user>" % (user_uuid)
-    ret += "</adept:licenseServiceRequest>"
+    ret = f"""
+    <?xml version=\"1.0\"?>
+        <adept:licenseServiceRequest xmlns:adept="http://ns.adobe.com/adept" identity="user">
+        <adept:operatorURL>{authURL}</adept:operatorURL>
+        {addNonce()}
+        <adept:user>{user_uuid}</adept:user>
+    </adept:licenseServiceRequest>
+    """
 
     NSMAP = {"adept": "http://ns.adobe.com/adept"}
     etree.register_namespace("adept", NSMAP["adept"])
@@ -304,55 +305,12 @@ def buildRights(license_token_node):
     return ret
 
 
-def fulfill(acsm_file, do_notify=False):
-    verbose_logging = False
-    try:
-        import calibre_plugins.deacsm.prefs as prefs
-        deacsmprefs = prefs.DeACSM_Prefs()
-        verbose_logging = deacsmprefs["detailed_logging"]
-    except:
-        pass
-
-    # Get pkcs12: 
-
-    pkcs12 = None
+def fulfill(acsm_file, do_notify=False, verbose_logging=False):
     acsmxml = None
-    try:
-        activationxml = etree.parse(get_activation_xml_path())
-        adNS = lambda tag: '{%s}%s' % ('http://ns.adobe.com/adept', tag)
-        pkcs12 = activationxml.find("./%s/%s" % (adNS("credentials"), adNS("pkcs12"))).text
-    except:
-        return False, "Activation not found or invalid"
-
-    if pkcs12 is None or len(pkcs12) == 0:
-        return False, "Activation missing"
-
     try:
         acsmxml = etree.parse(acsm_file)
     except:
         return False, "ACSM not found or invalid"
-
-    # print(etree.tostring(acsmxml, encoding="utf-8", pretty_print=True, xml_declaration=False).decode("utf-8"))
-
-    adNS = lambda tag: '{%s}%s' % ('http://ns.adobe.com/adept', tag)
-    dcNS = lambda tag: '{%s}%s' % ('http://purl.org/dc/elements/1.1/', tag)
-
-    try:
-        mimetype = acsmxml.find("./%s/%s/%s" % (adNS("resourceItemInfo"), adNS("metadata"), dcNS("format"))).text
-
-        if (mimetype == "application/pdf"):
-            # print("You're trying to fulfill a PDF file.")
-            pass
-        elif (mimetype == "application/epub+zip"):
-            # print("Trying to fulfill an EPUB file ...")
-            pass
-        else:
-            print("Weird mimetype: %s" % (mimetype))
-            print("Continuing anyways ...")
-
-    except:
-        # Some books, like from Google Play books, use a different format and don't have that metadata tag.
-        pass
 
     fulfill_request, adept_ns = buildFulfillRequest(acsmxml)
 
@@ -402,12 +360,6 @@ def fulfill(acsm_file, do_notify=False):
         fulfill_req_signed = etree.tostring(fulfill_request_xml, encoding="utf-8", pretty_print=True,
                                             xml_declaration=False).decode("utf-8")
 
-    # print("will send:\n %s" % fulfill_req_signed)
-    # print("Sending fulfill request to %s" % fulfillURL)
-
-    # For debugging only
-    # fulfillURL = fulfillURL.replace("https:", "http:")
-
     replyData = sendRequestDocu(fulfill_req_signed, fulfillURL).decode("utf-8")
 
     if "<error" in replyData:
@@ -423,49 +375,6 @@ def fulfill(acsm_file, do_notify=False):
                 return False, "Looks like there's been an error during Fulfillment even after auth: %s" % replyData
         else:
             return False, "Looks like there's been an error during Fulfillment: %s" % replyData
-
-    if verbose_logging:
-        print("fulfillmentResult:")
-        print(replyData)
-
-    adobe_fulfill_response = etree.fromstring(replyData)
-    NSMAP = {"adept": "http://ns.adobe.com/adept"}
-    adNS = lambda tag: '{%s}%s' % ('http://ns.adobe.com/adept', tag)
-
-    licenseURL = adobe_fulfill_response.find("./%s/%s/%s/%s" % (
-    adNS("fulfillmentResult"), adNS("resourceItemInfo"), adNS("licenseToken"), adNS("licenseURL"))).text
-
-    if adept_ns:
-        if do_notify:
-            print("Notifying server ...")
-            success, response = performFulfillmentNotification(adobe_fulfill_response)
-            if not success:
-                print("Some errors occurred during notify: ")
-                print(response)
-                print("The book was probably still downloaded correctly.")
-        else:
-            print("Not notifying any server since that was disabled.")
-    else:
-        print("Skipping notify, not supported properly with ADE 1.7.2")
-
-    is_returnable = False
-    try:
-        is_returnable_tx = adobe_fulfill_response.find("./%s/%s" % (adNS("fulfillmentResult"), adNS("returnable"))).text
-        if is_returnable_tx.lower() == "true":
-            is_returnable = True
-    except:
-        pass
-
-    if (is_returnable and do_notify and adept_ns):
-        # Only support loan returning if we also notified ACS. 
-        # Otherwise the server gets confused and we don't want that.
-        # Also, only do that for new-ish ADE and not for ADE 1.7.2
-        updateLoanReturnData(adobe_fulfill_response)
-
-    success, response = fetchLicenseServiceCertificate(licenseURL, operatorURL)
-
-    if success is False:
-        return False, response
 
     return True, replyData
 
@@ -575,7 +484,7 @@ def performFulfillmentNotification(fulfillmentResultToken, forceOptional=False, 
             try:
                 # "Normal" Adobe fulfillment
                 user = fulfillmentResultToken.find("./%s/%s/%s/%s" % (
-                adNS("fulfillmentResult"), adNS("resourceItemInfo"), adNS("licenseToken"), adNS("user"))).text
+                    adNS("fulfillmentResult"), adNS("resourceItemInfo"), adNS("licenseToken"), adNS("user"))).text
             except AttributeError:
                 # B&N Adobe PassHash fulfillment. Doesn't use notifications usually ...
                 # user = body.find("./%s" % (adNS("user"))).text
@@ -587,7 +496,7 @@ def performFulfillmentNotification(fulfillmentResultToken, forceOptional=False, 
             try:
                 # "Normal" Adobe fulfillment
                 device = fulfillmentResultToken.find("./%s/%s/%s/%s" % (
-                adNS("fulfillmentResult"), adNS("resourceItemInfo"), adNS("licenseToken"), adNS("device"))).text
+                    adNS("fulfillmentResult"), adNS("resourceItemInfo"), adNS("licenseToken"), adNS("device"))).text
             except:
                 print("Missing deviceID for loan metadata ... why?")
                 print("Reading from device.xml instead.")

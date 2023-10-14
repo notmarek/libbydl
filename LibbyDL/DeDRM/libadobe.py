@@ -447,38 +447,22 @@ def decrypt_with_device_key(data):
 
 
 def addNonce():
-    # TODO: Update nonce calculation
-    # Currently, the plugin always uses the current time, and the counter (tmp) is always 0. 
-    # What Adobe does instead is save the current time on program start, then increase tmp
-    # every time a Nonce is needed. 
-
     dt = datetime.utcnow()
     sec = (dt - datetime(1970, 1, 1)).total_seconds()
-    Ntime = int(sec * 1000)
-    # Ntime is now milliseconds since 1970
-
-    # Unixtime to gregorian timestamp
-    Ntime += 62167219200000
-
-    # Something is fishy with this tmp value. It usually is 0 in ADE, but not always. 
-    # I haven't yet figured out what it means ...
+    Ntime = int(sec * 1000) + 62167219200000
     tmp = 0
-
     if sys.version_info[0] >= 3:
         final = bytearray(Ntime.to_bytes(8, 'little'))
         final.extend(tmp.to_bytes(4, 'little'))
     else:
         final = bytearray(int_to_bytes(Ntime, 8, False))
         final.extend(int_to_bytes(tmp, 4, True))
-
-    ret = ""
-
-    ret += "<adept:nonce>%s</adept:nonce>" % (base64.b64encode(final).decode("utf-8"))
-
     m10m = dt + timedelta(minutes=10)
     m10m_str = m10m.strftime("%Y-%m-%dT%H:%M:%SZ")
-
-    ret += "<adept:expiration>%s</adept:expiration>" % (m10m_str)
+    ret = f"""
+        <adept:nonce>{base64.b64encode(final).decode("utf-8")}</adept:nonce>
+        <adept:expiration>{m10m_str}</adept:expiration>
+    """
 
     return ret
 

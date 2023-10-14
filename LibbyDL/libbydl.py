@@ -1,9 +1,11 @@
 import io
+import sys
 from time import time
-
+from tabulate import tabulate
 import click
 import requests
-
+from loguru import logger
+from colorama import Fore, init
 from LibbyDL.DeDRM.dedrm_acsm import dedrm
 
 ENDPOINT = "https://sentry-read.svc.overdrive.com"
@@ -172,20 +174,27 @@ class LibbyClient:
 
 def download_book(book_id, client, return_b=True, borrow_b=True):
     if borrow_b:
-        print("Borrowing book.")
+        logger.info("Borrowing book.")
         client.borrow_book(book_id)
-    acsm = client.fulfill_book(book_id)
-    acsm = io.BytesIO(acsm)
+    logger.info("Fulfilling book")
+    acsm = io.BytesIO(client.fulfill_book(book_id))
+    logger.info("Decrypting book")
     dedrm(acsm, "./books/")
     if return_b:
-        print("Returning book.")
+        logger.info("Returning book.")
         client.return_book(book_id)
 
-
+def tablify(table):
+    return tabulate(table, headers="firstrow", tablefmt="github")
 @click.group()
 @click.option('--token', envvar="LIBBY_IDENTITY", default=None)
+@click.option("--debug", default=False, is_flag=True)
+@click.option("--quiet", default=False, is_flag=True)
 @click.pass_context
-def cli(ctx, token):
+def cli(ctx, token, debug, quiet):
+    logger.remove(0)
+    logger.add(sys.stdout, level="INFO" if not quiet else "ERROR" if not debug else "DEBUG")
+    init(autoreset=True)
     if ctx.invoked_subcommand == "clone":
         return
     ctx.ensure_object(LibbyClient)
@@ -209,7 +218,7 @@ def clone(clone_code):
     c.clone(clone_code)
     c.acquire_identity()
     c.sync()
-    with open("../.libby_identity", "w") as f:
+    with open(".libby_identity", "w") as f:
         f.write(c.identity)
     click.echo("Identity cloned and saved.")
 
@@ -221,7 +230,7 @@ def export_code(ctx):
     time_left = res["expiry"] - time()
     code = str(res['code'])
     code = code[:4] + " " + code[4:]
-    print(f"Code: {code} - valid for {int(time_left)}s")
+    logger.info(f"Code: {code} - valid for {int(time_left)}s")
 
 
 @cli.command()
@@ -271,9 +280,11 @@ def suspend_hold(ctx, book_id, days):
 @cli.command()
 @click.pass_context
 def loans(ctx):
+    table = [["ID", "Author", "Title", "Expiration Date"]]
     for x in ctx.obj.data["loans"]:
-        print(f"{x['id']} - {x['firstCreatorName']} - {x['title']} - Expires: {x['expireDate']}")
-
+        table.append([x["id"], x["firstCreatorName"], x["title"], x['expireDate']])
+        logger.debug(f"{x['id']} - {x['firstCreatorName']} - {x['title']} - Expires: {x['expireDate']}")
+    click.echo(tablify(table))
 
 @cli.command()
 @click.option("--no-return", type=bool, default=False, is_flag=True)
@@ -286,27 +297,34 @@ def download_loans(ctx, no_return):
 @cli.command()
 @click.pass_context
 def holds(ctx):
+    table = [["ID", "Author", "Title", "Estimated wait time"]]
     for x in ctx.obj.data["holds"]:
-        print(f"{x['id']} - {x['firstCreatorName']} - {x['title']} - Estimated Wait: {x['estimatedWaitDays']} days")
-
+        wait_time = int(x["estimatedWaitDays"])
+        color = Fore.GREEN if wait_time < 7 else (Fore.YELLOW if wait_time < 30 else Fore.RED)
+        table.append([x["id"], x["firstCreatorName"], x["titl"], f'{color}{x["estimatedWaitDays"]} days{Fore.RESET}'])
+        logger.debug(f"{x['id']} - {x['firstCreatorName']} - {x['title']} - Estimated Wait: {x['estimatedWaitDays']} days")
+    click.echo(tablify(table))
 
 @cli.command()
 @click.argument("query", required=True)
 @click.pass_context
 def search(ctx, query):
+    table = [['ID', "Author", "Title", "Availability"]]
     for book in ctx.obj.search(query):
         available = [x for x in book['libraries'] if book['libraries'][x]['available']]
         if len(available) == 0:
             wait_time = [book["libraries"][x] for x in book["libraries"]]
-            wait_time.sort(key=lambda x: x["estimatedWaitDays"])
-            wait_time = wait_time[0]["estimatedWaitDays"]
-
-            availability = f"Holdable, wait time: {wait_time} days"
+            wait_time.sort(key=lambda x: x["estimatedWaitDays"] if x["estimatedWaitDays"] else 999)
+            if wait_time[0]["holdable"]:
+                wait_time = wait_time[0]["estimatedWaitDays"] if wait_time[0]["estimatedWaitDays"] else "?"
+                availability = Fore.YELLOW + f"Holdable - {wait_time} days"
+            else:
+                availability = Fore.RED + 'Unavailable'
         else:
-            availability = "Available"
-
-        print(f"{book['id']} - {book['author']} - {book['title']} - {availability}")
-
+            availability = Fore.GREEN + "Available"
+        table.append([book["id"], book["author"], book["title"], availability + Fore.RESET + ""])
+        logger.debug(f"{book['id']} - {book['author']} - {book['title']} - {availability}")
+    click.echo(tablify(table))
 
 if __name__ == "__main__":
     cli()

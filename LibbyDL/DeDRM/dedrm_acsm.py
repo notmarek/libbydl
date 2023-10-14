@@ -7,6 +7,7 @@ from lxml import etree
 from LibbyDL.DeDRM.ineptepub import decryptBook
 from LibbyDL.DeDRM.libadobe import sendHTTPRequest_DL2FILE
 from LibbyDL.DeDRM.libadobeFulfill import buildRights, fulfill
+from loguru import logger
 
 KEY_FOLDER = "./keys/"
 DECRYPTION_KEY = f"{KEY_FOLDER}decryption.der"
@@ -50,17 +51,17 @@ key = open(DECRYPTION_KEY, "rb").read()
 def dedrm(acsm_file, out="./"):
     success, replyData = fulfill(acsm_file)  # acquiring the acsm file can be done in memory :)
     if (success is False):
-        print("Hey, that didn't work!")
-        print(replyData)
+        logger.error("Hey, that didn't work!")
+        logger.error(replyData)
     else:
         acsm_file = acsm_file if type(acsm_file) is str else "inmemory"
-        print("Downloading book '" + acsm_file + "' ...")
+        logger.debug("Downloading book '" + acsm_file + "' ...")
         success, filename, f = download(replyData)
         if success != False:
-            print(f"Book downloaded - {filename}!")
+            logger.info(f"Book downloaded - {filename}.")
             res = decryptBook(key, f, out + filename + ".epub", "BytesIO object")
             if res == 0:
-                print("book decrypted")
+                logger.info("Book decrypted.")
 
 
 def main():
