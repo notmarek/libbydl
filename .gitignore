@@ -1,0 +1,7 @@
+venv
+keys
+books
+.libby_identity
+*.bak
+*.acsm
+*.json
