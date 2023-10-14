@@ -1,8 +1,8 @@
 import io
+from time import time
 
 import click
 import requests
-from time import time
 
 from LibbyDL.DeDRM.dedrm_acsm import dedrm
 
@@ -43,11 +43,35 @@ class LibbyClient:
         return res.content
 
     def return_book(self, book_id):
-        loan = [x for x in self.data["loans"] if x["id"] == f"{book_id}"][0]
+        try:
+            loan = [x for x in self.data["loans"] if x["id"] == f"{book_id}"][0]
+        except IndexError:
+            return False
         res = self.r.delete(f"{ENDPOINT}/card/{loan['cardId']}/loan/{book_id}",
                             headers={"authorization": f"Bearer {self.identity}"})
         if res.ok:
             self.data["loans"].remove(loan)
+        return res.ok
+
+    def unhold_book(self, book_id):
+        try:
+            hold = [x for x in self.data["holds"] if x["id"] == f"{book_id}"][0]
+        except IndexError:
+            return False
+        res = self.r.delete(f"{ENDPOINT}/card/{hold['cardId']}/hold/{book_id}",
+                            headers={"authorization": f"Bearer {self.identity}"})
+        if res.ok:
+            self.data["loans"].remove(hold)
+        return res.ok
+
+    def suspend_hold(self, book_id, days):
+        try:
+            hold = [x for x in self.data["holds"] if x["id"] == f"{book_id}"][0]
+        except IndexError:
+            return False
+        res = self.r.put(f"{ENDPOINT}/card/{hold['cardId']}/hold/{book_id}",
+                         json={"days_to_suspend": days},
+                         headers={"authorization": f"Bearer {self.identity}"})
         return res.ok
 
     def export_code(self):
@@ -55,6 +79,10 @@ class LibbyClient:
         return res.json()
 
     def borrow_book(self, book_id):
+        # We don't need to borrow again if there's already an active loan with the same id
+        loaned = [x for x in self.data["loans"] if str(x["id"]) == str(book_id)]
+        if len(loaned) > 0:
+            return loaned[0]
         card = None
         for lib in self.data["cards"]:
             avail = self.r.post(
@@ -79,6 +107,38 @@ class LibbyClient:
                               }}, headers={"authorization": f"Bearer {self.identity}"})
         if res.ok:
             self.data["loans"].append(res.json())
+        return res.ok
+
+    def hold_book(self, book_id):
+        # We don't need to hold again if there's already an active hold with the same id
+        holding = [x for x in self.data["holds"] if str(x["id"]) == str(book_id)]
+        if len(holding) > 0:
+            return holding[0]
+
+        card = None
+        for lib in self.data["cards"]:
+            avail = self.r.post(
+                f"{THUNDER_ENDPOINT}/v2/libraries/{lib['advantageKey']}/media/availability?x-client-id=dewey",
+                json={"ids": [f"{book_id}"]}).json()
+            if avail["items"][0] is not None and avail["items"][0]["isHoldable"]:
+                card = lib
+                break
+        if card is None:
+            return False
+
+        res = self.r.post(f"{ENDPOINT}/card/{card['cardId']}/hold/{book_id}",
+                          json={"days_to_suspend": 0,
+                                "email_address": card["emailAddress"] if card["emailAddress"] is not None else "",
+                                "title_format": "ebook", "reporting_context": {
+                                  "listSourceName": "search",
+                                  "listSourceId": "",
+                                  "listPath": f"library/{card['advantageKey']}/search/query-",
+                                  "clientName": "Dewey",
+                                  "clientVersion": "16.0.1",
+                                  "environment": "charlie"
+                              }}, headers={"authorization": f"Bearer {self.identity}"})
+        if res.ok:
+            self.data["holds"].append(res.json())
         return res.ok
 
     def search(self, query):
@@ -153,6 +213,7 @@ def clone(clone_code):
         f.write(c.identity)
     click.echo("Identity cloned and saved.")
 
+
 @cli.command()
 @click.pass_context
 def export_code(ctx):
@@ -161,6 +222,7 @@ def export_code(ctx):
     code = str(res['code'])
     code = code[:4] + " " + code[4:]
     print(f"Code: {code} - valid for {int(time_left)}s")
+
 
 @cli.command()
 @click.option("--no-return", type=bool, default=False, is_flag=True)
@@ -182,6 +244,28 @@ def borrow(ctx, book_id):
 @click.pass_context
 def return_book(ctx, book_id):
     ctx.obj.return_book(book_id)
+
+
+@cli.command(name="hold")
+@click.argument("book_id")
+@click.pass_context
+def hold_book(ctx, book_id):
+    ctx.obj.hold_book(book_id)
+
+
+@cli.command(name="unhold")
+@click.argument("book_id")
+@click.pass_context
+def unhold_book(ctx, book_id):
+    ctx.obj.unhold_book(book_id)
+
+
+@cli.command(name="suspend-hold")
+@click.argument("book_id")
+@click.argument("days", type=int)
+@click.pass_context
+def suspend_hold(ctx, book_id, days):
+    ctx.obj.suspend_hold(book_id, days)
 
 
 @cli.command()
