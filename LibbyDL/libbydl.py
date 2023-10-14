@@ -2,6 +2,7 @@ import io
 
 import click
 import requests
+from time import time
 
 from LibbyDL.DeDRM.dedrm_acsm import dedrm
 
@@ -48,6 +49,10 @@ class LibbyClient:
         if res.ok:
             self.data["loans"].remove(loan)
         return res.ok
+
+    def export_code(self):
+        res = self.r.get(f"{ENDPOINT}/chip/clone/code", headers={"Authorization": f"Bearer {self.identity}"})
+        return res.json()
 
     def borrow_book(self, book_id):
         card = None
@@ -148,6 +153,14 @@ def clone(clone_code):
         f.write(c.identity)
     click.echo("Identity cloned and saved.")
 
+@cli.command()
+@click.pass_context
+def export_code(ctx):
+    res = ctx.obj.export_code()
+    time_left = res["expiry"] - time()
+    code = str(res['code'])
+    code = code[:4] + " " + code[4:]
+    print(f"Code: {code} - valid for {int(time_left)}s")
 
 @cli.command()
 @click.option("--no-return", type=bool, default=False, is_flag=True)
