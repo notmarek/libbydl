@@ -2,12 +2,12 @@ import io
 import sys
 import zipfile
 
+from loguru import logger
 from lxml import etree
 
 from LibbyDL.DeDRM.ineptepub import decryptBook
 from LibbyDL.DeDRM.libadobe import sendHTTPRequest_DL2FILE
 from LibbyDL.DeDRM.libadobeFulfill import buildRights, fulfill
-from loguru import logger
 
 KEY_FOLDER = "./keys/"
 DECRYPTION_KEY = f"{KEY_FOLDER}decryption.der"
@@ -59,7 +59,7 @@ def dedrm(acsm_file, out="./"):
         success, filename, f = download(replyData)
         if success != False:
             logger.info(f"Book downloaded - {filename}.")
-            res = decryptBook(key, f, out + filename + ".epub", "BytesIO object")
+            res = decryptBook(key, f, out + filename + ".epub")
             if res == 0:
                 logger.info("Book decrypted.")
 

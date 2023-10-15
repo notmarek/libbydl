@@ -6,8 +6,6 @@ Helper library with code needed for Adobe stuff.
 '''
 
 import base64
-import hashlib
-import os
 import ssl
 import sys
 from uuid import getnode
@@ -84,29 +82,6 @@ VAR_VER_USE_DIFFERENT_NOTIFICATION_XML_ORDER = 123281
 # Default build ID to use - ADE 2.0.1
 VAR_VER_DEFAULT_BUILD_ID = 78765
 
-
-def are_ade_version_lists_valid():
-    # These five lists MUST all have the same amount of elements. 
-    # Otherwise that will cause all kinds of issues. 
-
-    fail = False
-    if len(VAR_VER_SUPP_CONFIG_NAMES) != len(VAR_VER_SUPP_VERSIONS):
-        fail = True
-    if len(VAR_VER_SUPP_CONFIG_NAMES) != len(VAR_VER_HOBBES_VERSIONS):
-        fail = True
-    if len(VAR_VER_SUPP_CONFIG_NAMES) != len(VAR_VER_OS_IDENTIFIERS):
-        fail = True
-    if len(VAR_VER_SUPP_CONFIG_NAMES) != len(VAR_VER_BUILD_IDS):
-        fail = True
-
-    if fail:
-        print("Internal error in DeACSM: Mismatched version list lenghts.")
-        print("This should never happen, please open a bug report.")
-        return False
-
-    return True
-
-
 devkey_bytes = None
 
 
@@ -123,28 +98,6 @@ def get_device_path():
 def get_activation_xml_path():
     global FILE_ACTIVATIONXML
     return FILE_ACTIVATIONXML
-
-
-def update_account_path(folder_path):
-    # type: (str) -> None
-
-    global FILE_DEVICEKEY, FILE_DEVICEXML, FILE_ACTIVATIONXML
-
-    FILE_DEVICEKEY = os.path.join(folder_path, "devicesalt")
-    FILE_DEVICEXML = os.path.join(folder_path, "device.xml")
-    FILE_ACTIVATIONXML = os.path.join(folder_path, "activation.xml")
-
-
-def createDeviceKeyFile():
-    # Original implementation: Device::createDeviceKeyFile()
-
-    DEVICE_KEY_SIZE = 16
-    global devkey_bytes
-    devkey_bytes = Random.get_random_bytes(DEVICE_KEY_SIZE)
-
-    f = open(FILE_DEVICEKEY, "wb")
-    f.write(devkey_bytes)
-    f.close()
 
 
 def int_to_bytes(value, length, big_endian=True):
@@ -174,65 +127,6 @@ def get_mac_address():
         return mac1.to_bytes(6, byteorder='big')
 
     return int_to_bytes(mac1, 6)
-
-
-def makeSerial(random):
-    # type: (bool) -> str
-
-    # Original implementation: std::string Device::makeSerial(bool random)
-
-    # It doesn't look like this implementation results in the same fingerprint Adobe is using in ADE.
-    # Given that Adobe only ever sees the SHA1 hash of this value, that probably doesn't matter.
-
-    sha_out = None
-
-    if not random:
-        try:
-            # Linux
-            uid = os.getuid()
-            import pwd
-            username = pwd.getpwuid(uid).pw_name.encode("utf-8").decode("latin-1")
-        except:
-            # Windows
-            uid = 1000
-            try:
-                username = os.getlogin().encode("utf-8").decode("latin-1")
-            except:
-                import getpass
-                username = getpass.getuser().encode("utf-8").decode("latin-1")
-
-        mac_address = get_mac_address()
-
-        dataToHash = "%d:%s:%02x:%02x:%02x:%02x:%02x:%02x\x00" % (uid, username,
-                                                                  mac_address[0], mac_address[1], mac_address[2],
-                                                                  mac_address[3], mac_address[4], mac_address[5])
-
-        sha_out = hashlib.sha1(dataToHash.encode('latin-1')).hexdigest().lower()
-    else:
-        import binascii
-        sha_out = binascii.hexlify(Random.get_random_bytes(20)).lower()
-
-    return sha_out
-
-
-def makeFingerprint(serial):
-    # type: (str) -> str
-
-    # Original implementation: std::string Device::makeFingerprint(const std::string& serial)
-    # base64(sha1(serial + privateKey))
-    # Fingerprint must be 20 bytes or less.
-
-    global devkey_bytes
-    if devkey_bytes is None:
-        f = open(FILE_DEVICEKEY, "rb")
-        devkey_bytes = f.read()
-        f.close()
-
-    str_to_hash = serial + devkey_bytes.decode('latin-1')
-    hashed_str = hashlib.sha1(str_to_hash.encode('latin-1')).digest()
-    b64str = base64.b64encode(hashed_str)
-
-    return b64str
 
 
 ############################################## HTTP stuff:
@@ -398,52 +292,6 @@ def sendRequestDocuRC(document, URL):
 
 
 ######### Encryption and signing ###################
-
-
-def encrypt_with_device_key(data):
-    data = bytearray(data)
-
-    global devkey_bytes
-    if devkey_bytes is None:
-        f = open(FILE_DEVICEKEY, "rb")
-        devkey_bytes = f.read()
-        f.close()
-
-    remain = 16
-    if (len(data) % 16):
-        remain = 16 - (len(data) % 16)
-
-    for _ in range(remain):
-        data.append(remain)
-
-    data = bytes(data)
-
-    iv = Random.get_random_bytes(16)
-    cip = AES.new(devkey_bytes, AES.MODE_CBC, iv)
-    encrypted = cip.encrypt(data)
-
-    res = iv + encrypted
-    return res
-
-
-def decrypt_with_device_key(data):
-    if isinstance(data, str):
-        # Python2 
-        data = bytes(data)
-
-    global devkey_bytes
-    if devkey_bytes is None:
-        f = open(FILE_DEVICEKEY, "rb")
-        devkey_bytes = f.read()
-        f.close()
-
-    cip = AES.new(devkey_bytes, AES.MODE_CBC, data[:16])
-    decrypted = bytearray(cip.decrypt(data[16:]))
-
-    # Remove padding
-    decrypted = decrypted[:-decrypted[-1]]
-
-    return decrypted
 
 
 def addNonce():

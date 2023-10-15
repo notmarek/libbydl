@@ -7,37 +7,6 @@
 # Released under the terms of the GNU General Public Licence, version 3
 # <http://www.gnu.org/licenses/>
 
-
-# Revision history:
-#   1 - Initial release
-#   2 - Rename to INEPT, fix exit code
-#   5 - Version bump to avoid (?) confusion;
-#       Improve OS X support by using OpenSSL when available
-#   5.1 - Improve OpenSSL error checking
-#   5.2 - Fix ctypes error causing segfaults on some systems
-#   5.3 - add support for OpenSSL on Windows, fix bug with some versions of libcrypto 0.9.8 prior to path level o
-#   5.4 - add support for encoding to 'utf-8' when building up list of files to decrypt from encryption.xml
-#   5.5 - On Windows try PyCrypto first, OpenSSL next
-#   5.6 - Modify interface to allow use with import
-#   5.7 - Fix for potential problem with PyCrypto
-#   5.8 - Revised to allow use in calibre plugins to eliminate need for duplicate code
-#   5.9 - Fixed to retain zip file metadata (e.g. file modification date)
-#   6.0 - moved unicode_argv call inside main for Windows DeDRM compatibility
-#   6.1 - Work if TkInter is missing
-#   6.2 - Handle UTF-8 file names inside an ePub, fix by Jose Luis
-#   6.3 - Add additional check on DER file sanity
-#   6.4 - Remove erroneous check on DER file sanity
-#   6.5 - Completely remove erroneous check on DER file sanity
-#   6.6 - Import tkFileDialog, don't assume something else will import it.
-#   7.0 - Add Python 3 compatibility for calibre 5.0
-#   7.1 - Add ignoble support, dropping the dedicated ignobleepub.py script
-#   7.2 - Only support PyCryptodome; clean up the code
-#   8.0 - Add support for "hardened" Adobe DRM (RMSDK >= 10)
-
-"""
-Decrypt Adobe Digital Editions encrypted ePub books.
-"""
-
 __license__ = 'GPL v3'
 __version__ = "8.0"
 
@@ -50,6 +19,7 @@ from contextlib import closing
 from uuid import UUID
 from zipfile import ZipInfo, ZipFile, ZIP_STORED, ZIP_DEFLATED
 
+from loguru import logger
 from lxml import etree
 
 try:
@@ -58,33 +28,6 @@ try:
 except ImportError:
     from Crypto.Cipher import AES, PKCS1_v1_5
     from Crypto.PublicKey import RSA
-
-
-# Wrap a stream so that output gets flushed immediately
-# and also make sure that any unicode strings get safely
-# encoded using "replace" before writing them.
-class SafeUnbuffered:
-    def __init__(self, stream):
-        self.stream = stream
-        self.encoding = stream.encoding
-        if self.encoding == None:
-            self.encoding = "utf-8"
-
-    def write(self, data):
-        if isinstance(data, str) or isinstance(data, unicode):
-            # str for Python3, unicode for Python2
-            data = data.encode(self.encoding, "replace")
-        try:
-            buffer = getattr(self.stream, 'buffer', self.stream)
-            # self.stream.buffer for Python3, self.stream for Python2
-            buffer.write(data)
-            buffer.flush()
-        except:
-            # We can do nothing if a write fails
-            raise
-
-    def __getattr__(self, attr):
-        return getattr(self.stream, attr)
 
 
 class ZeroedZipInfo(zipfile.ZipInfo):
@@ -106,59 +49,6 @@ def unpad(data, padding=16):
         pad_len = data[-1]
 
     return data[:-pad_len]
-
-
-# @@CALIBRE_COMPAT_CODE@@
-
-# get sys.argv arguments and encode them into utf-8
-def unicode_argv(default_name):
-    try:
-        from calibre.constants import iswindows
-    except:
-        iswindows = sys.platform.startswith('win')
-
-    if iswindows:
-        # Uses shell32.GetCommandLineArgvW to get sys.argv as a list of Unicode
-        # strings.
-
-        # Versions 2.x of Python don't support Unicode in sys.argv on
-        # Windows, with the underlying Windows API instead replacing multi-byte
-        # characters with '?'.
-
-        from ctypes import POINTER, byref, cdll, c_int, windll
-        from ctypes.wintypes import LPCWSTR, LPWSTR
-
-        GetCommandLineW = cdll.kernel32.GetCommandLineW
-        GetCommandLineW.argtypes = []
-        GetCommandLineW.restype = LPCWSTR
-
-        CommandLineToArgvW = windll.shell32.CommandLineToArgvW
-        CommandLineToArgvW.argtypes = [LPCWSTR, POINTER(c_int)]
-        CommandLineToArgvW.restype = POINTER(LPWSTR)
-
-        cmd = GetCommandLineW()
-        argc = c_int(0)
-        argv = CommandLineToArgvW(cmd, byref(argc))
-        if argc.value > 0:
-            # Remove Python executable and commands if present
-            start = argc.value - len(sys.argv)
-            return [argv[i] for i in
-                    range(start, argc.value)]
-        # if we don't have any arguments at all, just pass back script name
-        # this should never happen
-        return [default_name]
-    else:
-        argvencoding = sys.stdin.encoding or "utf-8"
-        return [arg if (isinstance(arg, str) or isinstance(arg, unicode)) else str(arg, argvencoding) for arg in
-                sys.argv]
-
-
-class ADEPTError(Exception):
-    pass
-
-
-class ADEPTNewVersionError(Exception):
-    pass
 
 
 META_NAMES = ('mimetype', 'META-INF/rights.xml')
@@ -253,12 +143,15 @@ def removeHardening(rights, keytype, keydata):
     return unpad(AES.new(kek, AES.MODE_CBC, kekiv).decrypt(keydata), 16)  # PKCS#7
 
 
+import os, traceback
+
+
 def decryptBook(userkey, fiiiile, outpath, inpath="generic.epub"):
     with closing(ZipFile(fiiiile)) as inf:
         namelist = inf.namelist()
         if 'META-INF/rights.xml' not in namelist or \
                 'META-INF/encryption.xml' not in namelist:
-            pass  # print("{0:s} is DRM-free.".format(os.path.basename(inpath)))
+            logger.debug("{0:s} is DRM-free.".format(os.path.basename(inpath)))
             return 1
         for name in META_NAMES:
             namelist.remove(name)
@@ -270,13 +163,13 @@ def decryptBook(userkey, fiiiile, outpath, inpath="generic.epub"):
             bookkey = bookkeyelem.text
             keytype = bookkeyelem.attrib.get('keyType', '0')
             if len(bookkey) >= 172 and int(keytype, 10) > 2:
-                pass  # print("{0:s} is a secure Adobe Adept ePub with hardening.".format(os.path.basename(inpath)))
+                logger.debug("{0:s} is a secure Adobe Adept ePub with hardening.".format(os.path.basename(inpath)))
             elif len(bookkey) == 172:
-                pass  # print("{0:s} is a secure Adobe Adept ePub.".format(os.path.basename(inpath)))
+                logger.debug("{0:s} is a secure Adobe Adept ePub.".format(os.path.basename(inpath)))
             elif len(bookkey) == 64:
-                pass  # print("{0:s} is a secure Adobe PassHash (B&N) ePub.".format(os.path.basename(inpath)))
+                logger.debug("{0:s} is a secure Adobe PassHash (B&N) ePub.".format(os.path.basename(inpath)))
             else:
-                pass  # print("{0:s} is not an Adobe-protected ePub!".format(os.path.basename(inpath)))
+                logger.debug("{0:s} is not an Adobe-protected ePub!".format(os.path.basename(inpath)))
                 return 1
 
             if len(bookkey) != 64:
@@ -291,7 +184,7 @@ def decryptBook(userkey, fiiiile, outpath, inpath="generic.epub"):
                     bookkey = None
 
                 if bookkey is None:
-                    pass  # print("Could not decrypt {0:s}. Wrong key".format(os.path.basename(inpath)))
+                    logger.debug("Could not decrypt {0:s}. Wrong key".format(os.path.basename(inpath)))
                     return 2
             else:
                 # Adobe PassHash / B&N
@@ -319,7 +212,7 @@ def decryptBook(userkey, fiiiile, outpath, inpath="generic.epub"):
                         # Check if there's still something in there
                         if (decryptor.check_if_remaining()):
                             data = decryptor.get_xml()
-                            pass  # print("Adding encryption.xml for the remaining embedded files.")
+                            logger.debug("Adding encryption.xml for the remaining embedded files.")
                             # We removed DRM, but there's still stuff like obfuscated fonts.
                         else:
                             continue
@@ -355,6 +248,7 @@ def decryptBook(userkey, fiiiile, outpath, inpath="generic.epub"):
                     else:
                         outf.writestr(zi, decryptor.decrypt(path, data))
         except:
-            pass  # print("Could not decrypt {0:s} because of an exception:\n{1:s}".format(os.path.basename(inpath), traceback.format_exc()))
+            logger.debug("Could not decrypt {0:s} because of an exception:\n{1:s}".format(os.path.basename(inpath),
+                                                                                          traceback.format_exc()))
             return 2
     return 0
