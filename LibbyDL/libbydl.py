@@ -302,7 +302,7 @@ def holds(ctx):
     for x in ctx.obj.data["holds"]:
         wait_time = int(x["estimatedWaitDays"])
         color = Fore.GREEN if wait_time < 7 else (Fore.YELLOW if wait_time < 30 else Fore.RED)
-        table.append([x["id"], x["firstCreatorName"], x["titl"], f'{color}{x["estimatedWaitDays"]} days{Fore.RESET}'])
+        table.append([x["id"], x["firstCreatorName"], x["title"], f'{color}{x["estimatedWaitDays"]} days{Fore.RESET}'])
         logger.debug(f"{x['id']} - {x['firstCreatorName']} - {x['title']} - Estimated Wait: {x['estimatedWaitDays']} days")
     click.echo(tablify(table))
 
