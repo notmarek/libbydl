@@ -36,6 +36,7 @@ class LibbyClient:
         self.acquire_identity()
         res = self.r.get(f"{ENDPOINT}/chip/sync", headers={"authorization": f"Bearer {self.identity}"})
         self.data = res.json()
+        logger.debug(res.json())
         return res
 
     def fulfill_book(self, book_id):
@@ -193,7 +194,7 @@ def tablify(table):
 @click.pass_context
 def cli(ctx, token, debug, quiet):
     logger.remove(0)
-    logger.add(sys.stdout, level="INFO" if not quiet else "ERROR" if not debug else "DEBUG")
+    logger.add(sys.stdout, level="INFO" if not quiet else ("ERROR" if not debug else "DEBUG"))
     init(autoreset=True)
     if ctx.invoked_subcommand == "clone":
         return
@@ -282,8 +283,8 @@ def suspend_hold(ctx, book_id, days):
 def loans(ctx):
     table = [["ID", "Author", "Title", "Expiration Date"]]
     for x in ctx.obj.data["loans"]:
-        table.append([x["id"], x["firstCreatorName"], x["title"], x['expireDate']])
-        logger.debug(f"{x['id']} - {x['firstCreatorName']} - {x['title']} - Expires: {x['expireDate']}")
+        table.append([x["id"], x['firstCreatorName'] if "firstCreatorName" in x else "???", x["title"], x['expireDate']])
+        logger.debug(f"{x['id']} - {x['firstCreatorName'] if 'firstCreatorName' in x else '???'} - {x['title']} - Expires: {x['expireDate']}")
     click.echo(tablify(table))
 
 @cli.command()
