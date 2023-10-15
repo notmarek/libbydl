@@ -1,11 +1,14 @@
 import io
+import json
 import sys
 from time import time
-from tabulate import tabulate
+
 import click
 import requests
-from loguru import logger
 from colorama import Fore, init
+from loguru import logger
+from tabulate import tabulate
+
 from LibbyDL.DeDRM.dedrm_acsm import dedrm
 
 ENDPOINT = "https://sentry-read.svc.overdrive.com"
@@ -48,6 +51,7 @@ class LibbyClient:
     def return_book(self, book_id):
         try:
             loan = [x for x in self.data["loans"] if x["id"] == f"{book_id}"][0]
+            logger.info(f"Returning \"{loan['title']}\"")
         except IndexError:
             return False
         res = self.r.delete(f"{ENDPOINT}/card/{loan['cardId']}/loan/{book_id}",
@@ -85,6 +89,7 @@ class LibbyClient:
         # We don't need to borrow again if there's already an active loan with the same id
         loaned = [x for x in self.data["loans"] if str(x["id"]) == str(book_id)]
         if len(loaned) > 0:
+            logger.info(f"\"{loaned[0]['title']}\" is already in your loans.")
             return loaned[0]
         card = None
         for lib in self.data["cards"]:
@@ -92,6 +97,8 @@ class LibbyClient:
                 f"{THUNDER_ENDPOINT}/v2/libraries/{lib['advantageKey']}/media/availability?x-client-id=dewey",
                 json={"ids": [f"{book_id}"]}).json()
             if avail["items"][0] is not None and avail["items"][0]["isAvailable"]:
+                logger.debug(json.dumps(avail['items'][0], indent=4))
+                logger.info(f'Borrowing book with id "{book_id}" from "{lib["library"]["name"]}"')
                 card = lib
                 break
         if card is None:
@@ -182,11 +189,13 @@ def download_book(book_id, client, return_b=True, borrow_b=True):
     logger.info("Decrypting book")
     dedrm(acsm, "./books/")
     if return_b:
-        logger.info("Returning book.")
         client.return_book(book_id)
+
 
 def tablify(table):
     return tabulate(table, headers="firstrow", tablefmt="github")
+
+
 @click.group()
 @click.option('--token', envvar="LIBBY_IDENTITY", default=None)
 @click.option("--debug", default=False, is_flag=True)
@@ -194,7 +203,7 @@ def tablify(table):
 @click.pass_context
 def cli(ctx, token, debug, quiet):
     logger.remove(0)
-    logger.add(sys.stdout, level="INFO" if not quiet else ("ERROR" if not debug else "DEBUG"))
+    logger.add(sys.stdout, level="INFO" if not debug else "DEBUG" if not quiet else "ERROR")
     init(autoreset=True)
     if ctx.invoked_subcommand == "clone":
         return
@@ -243,17 +252,19 @@ def download(ctx, book_id, no_return):
 
 
 @cli.command()
-@click.argument("book_id")
+@click.argument("book_ids")
 @click.pass_context
-def borrow(ctx, book_id):
-    ctx.obj.borrow_book(book_id)
+def borrow(ctx, book_ids):
+    for book_id in book_ids.split(","):
+        ctx.obj.borrow_book(book_id)
 
 
 @cli.command(name="return")
-@click.argument("book_id")
+@click.argument("book_ids")
 @click.pass_context
-def return_book(ctx, book_id):
-    ctx.obj.return_book(book_id)
+def return_book(ctx, book_ids):
+    for book_id in book_ids:
+        ctx.obj.return_book(book_id)
 
 
 @cli.command(name="hold")
@@ -283,16 +294,25 @@ def suspend_hold(ctx, book_id, days):
 def loans(ctx):
     table = [["ID", "Author", "Title", "Expiration Date"]]
     for x in ctx.obj.data["loans"]:
-        table.append([x["id"], x['firstCreatorName'] if "firstCreatorName" in x else "???", x["title"], x['expireDate']])
-        logger.debug(f"{x['id']} - {x['firstCreatorName'] if 'firstCreatorName' in x else '???'} - {x['title']} - Expires: {x['expireDate']}")
+        table.append(
+            [x["id"], x['firstCreatorName'] if "firstCreatorName" in x else "???", x["title"], x['expireDate']])
+        logger.debug(
+            f"{x['id']} - {x['firstCreatorName'] if 'firstCreatorName' in x else '???'} - {x['title']} - Expires: {x['expireDate']}")
     click.echo(tablify(table))
+
 
 @cli.command()
 @click.option("--no-return", type=bool, default=False, is_flag=True)
 @click.pass_context
 def download_loans(ctx, no_return):
+    logger.debug(f"Going to download {len(ctx.obj.data['loans'])} books")
+    logger.debug(json.dumps(ctx.obj.data["loans"], indent=4))
     for book in ctx.obj.data["loans"]:
-        download_book(book["id"], ctx.obj, not no_return, False)
+        logger.debug(f"Downloading: {book['id']}")
+        download_book(book["id"], ctx.obj, False, False)
+    if not no_return:
+        for x in [x['id'] for x in ctx.obj.data["loans"]]:
+            ctx.obj.return_book(x)
 
 
 @cli.command()
@@ -303,8 +323,10 @@ def holds(ctx):
         wait_time = int(x["estimatedWaitDays"])
         color = Fore.GREEN if wait_time < 7 else (Fore.YELLOW if wait_time < 30 else Fore.RED)
         table.append([x["id"], x["firstCreatorName"], x["title"], f'{color}{x["estimatedWaitDays"]} days{Fore.RESET}'])
-        logger.debug(f"{x['id']} - {x['firstCreatorName']} - {x['title']} - Estimated Wait: {x['estimatedWaitDays']} days")
+        logger.debug(
+            f"{x['id']} - {x['firstCreatorName']} - {x['title']} - Estimated Wait: {x['estimatedWaitDays']} days")
     click.echo(tablify(table))
+
 
 @cli.command()
 @click.argument("query", required=True)
@@ -326,6 +348,7 @@ def search(ctx, query):
         table.append([book["id"], book["author"], book["title"], availability + Fore.RESET + ""])
         logger.debug(f"{book['id']} - {book['author']} - {book['title']} - {availability}")
     click.echo(tablify(table))
+
 
 if __name__ == "__main__":
     cli()
