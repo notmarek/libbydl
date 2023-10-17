@@ -1,6 +1,10 @@
 # LibbyDL
 a "simple" OverDrive ebook downloader
 
+ACSM downloading logic from: https://github.com/Leseratte10/acsm-calibre-plugin
+
+DRM removal logic from: https://github.com/noDRM/DeDRM_tools
+
 # Usage
 
 ```
