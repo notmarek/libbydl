@@ -195,6 +195,7 @@ def download_book(book_id, client, return_b=True, borrow_b=True):
 def tablify(table):
     return tabulate(table, headers="firstrow", tablefmt="github")
 
+
 @click.group()
 @click.option('--token', envvar="LIBBY_IDENTITY", default=None)
 @click.option("--debug", default=False, is_flag=True)
@@ -225,7 +226,8 @@ def cli(ctx, token, debug, quiet):
 
 @cli.command()
 def provision_ade_account():
-    from LibbyDL.DeDRM.libadobeAccount import createDeviceFile, createUser, signIn, activateDevice, exportAccountEncryptionKeyDER
+    from LibbyDL.DeDRM.libadobeAccount import createDeviceFile, createUser, signIn, activateDevice, \
+        exportAccountEncryptionKeyDER
     from LibbyDL.DeDRM.libadobe import createDeviceKeyFile, KEY_FOLDER
     from LibbyDL.DeDRM.dedrm_acsm import DECRYPTION_KEY
     import os
@@ -275,10 +277,11 @@ def export_code(ctx):
 
 @cli.command()
 @click.option("--no-return", type=bool, default=False, is_flag=True)
-@click.argument("book_id")
+@click.argument("book_ids")
 @click.pass_context
-def download(ctx, book_id, no_return):
-    download_book(book_id, ctx.obj, not no_return)
+def download(ctx, book_ids, no_return):
+    for book_id in book_ids:
+        download_book(book_id, ctx.obj, not no_return)
 
 
 @cli.command()
@@ -298,25 +301,28 @@ def return_book(ctx, book_ids):
 
 
 @cli.command(name="hold")
-@click.argument("book_id")
+@click.argument("book_ids")
 @click.pass_context
-def hold_book(ctx, book_id):
-    ctx.obj.hold_book(book_id)
+def hold_book(ctx, book_ids):
+    for book_id in book_ids:
+        ctx.obj.hold_book(book_id)
 
 
 @cli.command(name="unhold")
-@click.argument("book_id")
+@click.argument("book_ids")
 @click.pass_context
-def unhold_book(ctx, book_id):
-    ctx.obj.unhold_book(book_id)
+def unhold_book(ctx, book_ids):
+    for book_id in book_ids:
+        ctx.obj.unhold_book(book_id)
 
 
 @cli.command(name="suspend-hold")
-@click.argument("book_id")
+@click.argument("book_ids")
 @click.argument("days", type=int)
 @click.pass_context
-def suspend_hold(ctx, book_id, days):
-    ctx.obj.suspend_hold(book_id, days)
+def suspend_hold(ctx, book_ids, days):
+    for book_id in book_ids:
+        ctx.obj.suspend_hold(book_id, days)
 
 
 @cli.command()
