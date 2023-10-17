@@ -195,7 +195,6 @@ def download_book(book_id, client, return_b=True, borrow_b=True):
 def tablify(table):
     return tabulate(table, headers="firstrow", tablefmt="github")
 
-
 @click.group()
 @click.option('--token', envvar="LIBBY_IDENTITY", default=None)
 @click.option("--debug", default=False, is_flag=True)
@@ -209,8 +208,11 @@ def cli(ctx, token, debug, quiet):
         return
     ctx.ensure_object(LibbyClient)
     if token is None:
-        with open("./.libby_identity", "r") as f:
-            token = f.read()
+        try:
+            with open("./.libby_identity", "r") as f:
+                token = f.read()
+        except FileNotFoundError:
+            logger.critical("You are missing a libby token file, pleas sync first.")
 
     c = LibbyClient()
     if token is not None:
@@ -219,6 +221,34 @@ def cli(ctx, token, debug, quiet):
         raise click.UsageError("You need to provide an identity token or sync with your Libby app.")
     c.sync()
     ctx.obj = c
+
+
+@cli.command()
+def provision_ade_account():
+    from LibbyDL.DeDRM.libadobeAccount import createDeviceFile, createUser, signIn, activateDevice, exportAccountEncryptionKeyDER
+    from LibbyDL.DeDRM.libadobe import createDeviceKeyFile, KEY_FOLDER
+    from LibbyDL.DeDRM.dedrm_acsm import DECRYPTION_KEY
+    import os
+    ADE_VERSION = 1
+    os.makedirs(KEY_FOLDER, exist_ok=True)
+    createDeviceKeyFile()
+    success = createDeviceFile(True, ADE_VERSION)
+    if not success:
+        return logger.critical("Couldn't create device file.")
+    success, response = createUser(ADE_VERSION, None)
+    if not success:
+        return logger.critical(f"Couldn't register: {response}")
+    success, response = signIn("anonymous", "", "")
+    if not success:
+        return logger.critical(f"Unsuccessful login: {response}")
+    success, response = activateDevice(ADE_VERSION, None)
+    if not success:
+        return logger.critical(f"Couldn't activate device: {response}")
+    logger.success("Successfully activated an ADE account.")
+    success = exportAccountEncryptionKeyDER(DECRYPTION_KEY)
+    if not success:
+        logger.critical("Couldn't export ADE decryption key.")
+    logger.success("Successfully exported ADE decryption key you can now decrypt ebooks.")
 
 
 @cli.command()

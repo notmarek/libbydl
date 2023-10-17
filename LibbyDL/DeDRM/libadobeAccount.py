@@ -25,12 +25,12 @@ except ImportError:
 #@@CALIBRE_COMPAT_CODE@@
 
 
-from libadobe import addNonce, sign_node, sendRequestDocu, sendHTTPRequest
-from libadobe import makeFingerprint, makeSerial, encrypt_with_device_key, decrypt_with_device_key
-from libadobe import get_devkey_path, get_device_path, get_activation_xml_path
-from libadobe import VAR_VER_SUPP_CONFIG_NAMES, VAR_VER_HOBBES_VERSIONS, VAR_VER_OS_IDENTIFIERS
-from libadobe import VAR_VER_ALLOWED_BUILD_IDS_SWITCH_TO, VAR_VER_SUPP_VERSIONS, VAR_ACS_SERVER_HTTP
-from libadobe import VAR_ACS_SERVER_HTTPS, VAR_VER_BUILD_IDS, VAR_VER_NEED_HTTPS_BUILD_ID_LIMIT, VAR_VER_ALLOWED_BUILD_IDS_AUTHORIZE
+from LibbyDL.DeDRM.libadobe import addNonce, sign_node, sendRequestDocu, sendHTTPRequest
+from LibbyDL.DeDRM.libadobe import makeFingerprint, makeSerial, encrypt_with_device_key, decrypt_with_device_key
+from LibbyDL.DeDRM.libadobe import get_devkey_path, get_device_path, get_activation_xml_path
+from LibbyDL.DeDRM.libadobe import VAR_VER_SUPP_CONFIG_NAMES, VAR_VER_HOBBES_VERSIONS, VAR_VER_OS_IDENTIFIERS
+from LibbyDL.DeDRM.libadobe import VAR_VER_ALLOWED_BUILD_IDS_SWITCH_TO, VAR_VER_SUPP_VERSIONS, VAR_ACS_SERVER_HTTP
+from LibbyDL.DeDRM.libadobe import VAR_ACS_SERVER_HTTPS, VAR_VER_BUILD_IDS, VAR_VER_NEED_HTTPS_BUILD_ID_LIMIT, VAR_VER_ALLOWED_BUILD_IDS_AUTHORIZE
 
 
 def createDeviceFile(randomSerial, useVersionIndex = 0): 
@@ -223,7 +223,7 @@ def createUser(useVersionIndex = 0, authCert = None):
 def encryptLoginCredentials(username, password, authenticationCertificate): 
     # type: (str, str, str) -> bytes
 
-    from libadobe import devkey_bytes as devkey_adobe
+    from LibbyDL.DeDRM.libadobe import devkey_bytes as devkey_adobe
     import struct
 
     if devkey_adobe is not None: 

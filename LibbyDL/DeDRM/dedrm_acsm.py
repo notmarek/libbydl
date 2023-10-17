@@ -45,10 +45,11 @@ def download(replyData):
     return (True, book_name, temp_file)
 
 
-key = open(DECRYPTION_KEY, "rb").read()
+
 
 
 def dedrm(acsm_file, out="./"):
+    key = open(DECRYPTION_KEY, "rb").read()
     success, replyData = fulfill(acsm_file)  # acquiring the acsm file can be done in memory :)
     if (success is False):
         logger.error("Hey, that didn't work!")

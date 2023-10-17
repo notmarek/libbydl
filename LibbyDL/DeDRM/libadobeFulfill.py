@@ -7,7 +7,7 @@ from LibbyDL.DeDRM.libadobe import VAR_VER_SUPP_VERSIONS, VAR_VER_HOBBES_VERSION
 from LibbyDL.DeDRM.libadobe import addNonce, sign_node, get_cert_from_pkcs12, sendRequestDocu, sendRequestDocuRC, \
     sendHTTPRequest
 from LibbyDL.DeDRM.libadobe import get_devkey_path, get_device_path, get_activation_xml_path
-
+from loguru import logger
 
 # @@CALIBRE_COMPAT_CODE@@
 
@@ -108,9 +108,8 @@ def buildInitLicenseServiceRequest(authURL):
     activationxml = etree.parse(get_activation_xml_path())
     user_uuid = activationxml.find("./%s/%s" % (adNS("credentials"), adNS("user"))).text
 
-    ret = f"""
-    <?xml version=\"1.0\"?>
-        <adept:licenseServiceRequest xmlns:adept="http://ns.adobe.com/adept" identity="user">
+    ret = f"""<?xml version=\"1.0\"?>
+    <adept:licenseServiceRequest xmlns:adept="http://ns.adobe.com/adept" identity="user">
         <adept:operatorURL>{authURL}</adept:operatorURL>
         {addNonce()}
         <adept:user>{user_uuid}</adept:user>
@@ -119,7 +118,7 @@ def buildInitLicenseServiceRequest(authURL):
 
     NSMAP = {"adept": "http://ns.adobe.com/adept"}
     etree.register_namespace("adept", NSMAP["adept"])
-
+    logger.debug(ret)
     req_xml = etree.fromstring(ret)
 
     signature = sign_node(req_xml)
@@ -142,7 +141,7 @@ def getDecryptedCert(pkcs12_b64_string=None):
     pkcs12_data = base64.b64decode(pkcs12_b64_string)
 
     try:
-        from libadobe import devkey_bytes as devkey_adobe
+        from LibbyDL.DeDRM.libadobe import devkey_bytes as devkey_adobe
     except:
         pass
 
