@@ -275,27 +275,31 @@ def buildRights(license_token_node):
     NSMAP = {"adept": "http://ns.adobe.com/adept"}
     adNS = lambda tag: '{%s}%s' % ('http://ns.adobe.com/adept', tag)
     lic_token_url = license_token_node.find("./%s" % (adNS("licenseURL"))).text
-
+    logger.debug(lic_token_url)
     ret += "<adept:licenseURL>%s</adept:licenseURL>\n" % lic_token_url
 
     # Get cert for this license URL:
     activationxml = etree.parse(get_activation_xml_path())
 
+    logger.debug(etree.tostring(activationxml, pretty_print=True).decode("utf-8"))
     try:
-        licInfo = activationxml.findall("./%s/%s" % (adNS("licenseServices"), adNS("licenseServiceInfo")))
-
+        licInfo = activationxml.findall("./%s" % (adNS("activationServiceInfo")))
+        logger.debug(licInfo)
         found = False
 
         for member in licInfo:
-            if member.find("./%s" % (adNS("licenseURL"))).text == lic_token_url:
-                ret += "<adept:certificate>%s</adept:certificate>\n" % (
-                    member.find("./%s" % (adNS("certificate"))).text)
-                found = True
-                break
-    except:
+            #yolo use the first cert
+            #if member.find("./%s/%s" % (adNS("licenseServices"), adNS("licenseServiceInfo"))).text == lic_token_url:
+            ret += "<adept:certificate>%s</adept:certificate>\n" % (
+                member.find("./%s" % (adNS("certificate"))).text)
+            found = True
+            break
+    except Exception as e:
+        logger.error(e)
         return None
 
     if not found:
+        logger.error("not found")
         return None
 
     ret += "</adept:licenseServiceInfo>\n"

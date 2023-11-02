@@ -8,6 +8,7 @@ from LibbyDL.DeDRM.ineptepub import decryptBook
 from LibbyDL.DeDRM.libadobe import sendHTTPRequest_DL2FILE
 from LibbyDL.DeDRM.libadobeFulfill import buildRights, fulfill
 from loguru import logger
+import re
 
 KEY_FOLDER = "./keys/"
 DECRYPTION_KEY = f"{KEY_FOLDER}decryption.der"
@@ -26,6 +27,7 @@ def download(replyData):
         "./%s/%s/%s" % (adNS("fulfillmentResult"), adNS("resourceItemInfo"), adNS("licenseToken")))
     rights_xml_str = buildRights(license_token_node)
     if (rights_xml_str is None):
+        logger.debug("We are fucked")
         return (False, None, None)
     book_name = None
     try:
@@ -51,6 +53,7 @@ def download(replyData):
 def dedrm(acsm_file, out="./"):
     key = open(DECRYPTION_KEY, "rb").read()
     success, replyData = fulfill(acsm_file)  # acquiring the acsm file can be done in memory :)
+    logger.debug(replyData)
     if (success is False):
         logger.error("Hey, that didn't work!")
         logger.error(replyData)
@@ -58,9 +61,10 @@ def dedrm(acsm_file, out="./"):
         acsm_file = acsm_file if type(acsm_file) is str else "inmemory"
         logger.debug("Downloading book '" + acsm_file + "' ...")
         success, filename, f = download(replyData)
+        logger.debug(success)
         if success != False:
             logger.info(f"Book downloaded - {filename}.")
-            res = decryptBook(key, f, out + filename + ".epub", "BytesIO object")
+            res = decryptBook(key, f, out + re.sub(r'[^\w_. -]', '_', filename) + ".epub", "BytesIO object")
             if res == 0:
                 logger.info("Book decrypted.")
 
