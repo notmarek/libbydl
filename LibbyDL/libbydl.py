@@ -11,7 +11,7 @@ from tabulate import tabulate
 
 from LibbyDL.DeDRM.dedrm_acsm import dedrm
 
-ENDPOINT = "https://sentry-read.svc.overdrive.com"
+ENDPOINT = "https://sentry.libbyapp.com"
 THUNDER_ENDPOINT = "https://thunder.api.overdrive.com"
 USER_AGENT = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) (Dewey; V22; iOS; 6.3.0-160)"
 
