@@ -280,7 +280,7 @@ def export_code(ctx):
 @click.argument("book_ids")
 @click.pass_context
 def download(ctx, book_ids, no_return):
-    for book_id in book_ids:
+    for book_id in book_ids.split(","):
         download_book(book_id, ctx.obj, not no_return)
 
 
